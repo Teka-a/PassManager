@@ -1,0 +1,18 @@
+<RCC>
+    <qresource prefix="/rc">
+        <file>icons/add.png</file>
+        <file>icons/blocking.png</file>
+        <file>icons/change.png</file>
+        <file>icons/copy.png</file>
+        <file>icons/delete.png</file>
+        <file>icons/icon.ico</file>
+        <file>icons/profile.png</file>
+        <file>icons/search.png</file>
+        <file>icons/settings.png</file>
+        <file>icons/website.png</file>
+        <file>icons/update.png</file>
+        <file>icons/show.png</file>
+        <file>icons/hide.png</file>
+        <file>icons/home.png</file>
+    </qresource>
+</RCC>
