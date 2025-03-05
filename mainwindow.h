@@ -11,6 +11,8 @@
 #include <QSqlQuery>
 #include <QClipboard>
 
+#include <QCryptographicHash>
+#include <QByteArray>
 
 
 #include "credentials.h"
@@ -46,7 +48,15 @@ private slots:
 private:
     Ui::MainWindow *ui;
 
+    void generateAESKeyAndIV(const QByteArray &inputCode, QByteArray &key, QByteArray &iv);
+
+    QByteArray keyPass;
+    QByteArray ivPass;
+
     QString dbName = "../../info.db";
+    QSqlDatabase db;
+    bool decryptAndLoadDatabase(const QByteArray &key);
+
 
     void checkPin();
 
@@ -55,6 +65,6 @@ private:
 
     QString encryptedPin;
 
-
+    void wipe(QByteArray& mem);
 };
 #endif // MAINWINDOW_H

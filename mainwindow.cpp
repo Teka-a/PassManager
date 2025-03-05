@@ -58,30 +58,15 @@ MainWindow::~MainWindow()
 }
 
 
-void MainWindow::checkPin()
-{
-    QString pin = ui->pin->text();
-    if (pin == "12345") {
-        //encrypt pin
-        this->encryptedPin = pin;
+void MainWindow::generateAESKeyAndIV(const QByteArray &pin, QByteArray &key, QByteArray &iv) {
+    QByteArray salt = dbName.toUtf8();
+    QByteArray hash = QCryptographicHash::hash(pin + salt, QCryptographicHash::Sha256);
 
-        ui->stackedWidget->setCurrentWidget(ui->page_2);
-        this->setMinimumSize(865, 543);
-        this->setMaximumSize(865, 543);
+    key = hash.left(32);
+    iv = hash.right(16);
 
-        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
-        db.setDatabaseName(this->dbName);
-
-        this->setAllCredentials();
-    } else {
-        ui->pin->setText("");
-        ui->wrongPinInfo->setVisible(true);
-        QPixmap lockedPic (":/rc/icons/blocking.png");
-
-        ui->locked->setPixmap(lockedPic);
-    }
-
-    qDebug() << pin;
+    keyPass = hash.mid(32, 32);
+    keyPass = hash.mid(64, 16);
 }
 
 
@@ -94,42 +79,9 @@ void MainWindow::copyClipboard()
 }
 
 
-void MainWindow::changeViewMode()
-{
-    QPushButton *clicked = qobject_cast<QPushButton*>(sender());
-
-    int mode = clicked->property("mode").toInt();
-
-    if (mode == 0) { //данные скрыты
-        qDebug() << "here";
-        if (clicked->property("item").toInt() == 0) {
-            ui->loginLine->setEchoMode(QLineEdit::Normal);
-        } else {
-            ui->passwordLine->setEchoMode(QLineEdit::Normal);
-        }
-
-        QPixmap pixHide(":/rc/icons/hide.png");
-        QIcon hideIcon(pixHide);
-        clicked->setIcon(hideIcon);
-
-       clicked->setProperty("mode", 1);
-    } else { //данные видны
-        if (clicked->property("item").toInt() == 0) {
-            ui->loginLine->setEchoMode(QLineEdit::Password);
-        } else {
-            ui->passwordLine->setEchoMode(QLineEdit::Password);
-        }
-
-        QPixmap pixShow (":/rc/icons/show.png");
-        QIcon showIcon(pixShow);
-        clicked->setIcon(showIcon);
-
-        clicked->setProperty("mode", 0);
-    }
-
-}
 
 
+//setupUI
 void MainWindow::setAllCredentials()
 {
     QVector<Credentials> credsInfo = readCredentials();
@@ -197,7 +149,7 @@ void MainWindow::setAllCredentials()
         deleteCredentials->setMaximumSize(30, 30);
 
         connect(deleteCredentials, &QPushButton::clicked, this, &MainWindow::delCreds);
-        deleteCredentials->setProperty("id", credsInfo[i].getId());
+        //deleteCredentials->setProperty("id", credsInfo[i].getId());
 
         QPushButton *changeCredentials = new QPushButton();
         QPixmap pixChange(":/rc/icons/change.png");
@@ -205,7 +157,7 @@ void MainWindow::setAllCredentials()
         changeCredentials->setIcon(changeBtn);
         changeCredentials->setMaximumSize(30, 30);
 
-        changeCredentials->setProperty("id", credsInfo[i].getId());
+        //changeCredentials->setProperty("id", credsInfo[i].getId());
 
         layout->addWidget(copySite);
         layout->addWidget(site);
@@ -231,6 +183,57 @@ void MainWindow::setAllCredentials()
 }
 
 
+void MainWindow::openAddForm()
+{
+    ui->stackedWidget->setCurrentWidget(ui->page_3);
+    ui->siteLine->setFocus();
+}
+
+
+void MainWindow::openHomePage()
+{
+    ui->stackedWidget->setCurrentWidget(ui->page_2);
+}
+
+
+void MainWindow::changeViewMode()
+{
+    QPushButton *clicked = qobject_cast<QPushButton*>(sender());
+
+    int mode = clicked->property("mode").toInt();
+
+    if (mode == 0) { //данные скрыты
+        qDebug() << "here";
+        if (clicked->property("item").toInt() == 0) {
+            ui->loginLine->setEchoMode(QLineEdit::Normal);
+        } else {
+            ui->passwordLine->setEchoMode(QLineEdit::Normal);
+        }
+
+        QPixmap pixHide(":/rc/icons/hide.png");
+        QIcon hideIcon(pixHide);
+        clicked->setIcon(hideIcon);
+
+        clicked->setProperty("mode", 1);
+    } else { //данные видны
+        if (clicked->property("item").toInt() == 0) {
+            ui->loginLine->setEchoMode(QLineEdit::Password);
+        } else {
+            ui->passwordLine->setEchoMode(QLineEdit::Password);
+        }
+
+        QPixmap pixShow (":/rc/icons/show.png");
+        QIcon showIcon(pixShow);
+        clicked->setIcon(showIcon);
+
+        clicked->setProperty("mode", 0);
+    }
+
+}
+
+
+
+//Work with db
 QVector<Credentials> MainWindow::readCredentials()
 {
     QVector<Credentials> credentialsInfo;
@@ -314,19 +317,52 @@ void MainWindow::addCreds()
 void MainWindow::delCreds()
 {
     QPushButton *button = qobject_cast<QPushButton*>(sender());
-    QWidget *widget = button->property("parentWidget").value<QWidget*>();
+    if (button) {
+        QWidget *parentWidget = qobject_cast<QWidget*>(button->parent());
+        if (parentWidget) {
+            QString value = parentWidget->property("id").toString();
+
+        }
+    }
+
 
 }
 
 
-void MainWindow::openAddForm()
+void MainWindow::checkPin()
 {
-    ui->stackedWidget->setCurrentWidget(ui->page_3);
-    ui->siteLine->setFocus();
+    QString pin = ui->pin->text();
+
+    QByteArray pinArr = pin.toUtf8();
+    QByteArray keyDatabase;
+    QByteArray ivDatabase;
+
+    generateAESKeyAndIV(pinArr, keyDatabase, ivDatabase);
+
+    if (pin == "12345") {
+        //encrypt pin
+        this->encryptedPin = pin;
+
+        ui->stackedWidget->setCurrentWidget(ui->page_2);
+        this->setMinimumSize(865, 543);
+        this->setMaximumSize(865, 543);
+
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
+        db.setDatabaseName(this->dbName);
+
+        this->setAllCredentials();
+    } else {
+        ui->pin->setText("");
+        ui->wrongPinInfo->setVisible(true);
+        QPixmap lockedPic (":/rc/icons/blocking.png");
+
+        ui->locked->setPixmap(lockedPic);
+    }
+
 }
 
 
-void MainWindow::openHomePage()
+void MainWindow::wipe(QByteArray& mem)
 {
-    ui->stackedWidget->setCurrentWidget(ui->page_2);
+    mem.fill(0);
 }
