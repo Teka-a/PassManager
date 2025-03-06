@@ -18,7 +18,7 @@
     <item row="1" column="0">
      <widget class="QStackedWidget" name="stackedWidget">
       <property name="currentIndex">
-       <number>2</number>
+       <number>1</number>
       </property>
       <widget class="QWidget" name="page">
        <property name="maximumSize">
@@ -413,7 +413,7 @@
              <x>0</x>
              <y>0</y>
              <width>762</width>
-             <height>464</height>
+             <height>462</height>
             </rect>
            </property>
           </widget>

@@ -4,6 +4,10 @@
 #include <QMainWindow>
 #include <QString>
 #include <QVector>
+#include <QDir>
+#include <QFile>
+#include <QBuffer>
+#include <QByteArray>
 
 #include <QSqlDatabase>
 #include <QSqlError>
@@ -12,7 +16,14 @@
 #include <QClipboard>
 
 #include <QCryptographicHash>
-#include <QByteArray>
+
+#include <openssl/evp.h>
+#include <openssl/sha.h>
+
+/*
+└─$ echo -n "your_string_to_encrypt" | openssl enc -aes-256-cbc -K e62039c06ff24236411e763e505c4198ee2deda410715f82476d82481878d78d -iv ee2deda410715f82476d82481878d78d  | hexdump -v  -e '/1 "%02x"'
+└─$ openssl enc -aes-256-cbc -in info.db -out info.enc -K b340947333ac4783f8d88683acc45f0165834e14160df964ffa5d3aee6b9c8dc -iv 65834e14160df964ffa5d3aee6b9c8dc
+*/
 
 
 #include "credentials.h"
@@ -47,16 +58,27 @@ private slots:
 
 private:
     Ui::MainWindow *ui;
+    QSqlDatabase db;
 
     void generateAESKeyAndIV(const QByteArray &inputCode, QByteArray &key, QByteArray &iv);
+
+    bool encryptFile(const QByteArray &key, const QByteArray &iv);
+    QByteArray decryptFile(const QByteArray &key, const QByteArray &iv);
+
+    QString encryptData(const QString &data, const QByteArray &key, const QByteArray &iv);
+    QString decryptData(const QString &data, const QByteArray &key, const QByteArray &iv);
 
     QByteArray keyPass;
     QByteArray ivPass;
 
-    QString dbName = "../../info.db";
-    QSqlDatabase db;
-    bool decryptAndLoadDatabase(const QByteArray &key);
+    QByteArray keyLogin;
+    QByteArray ivLogin;
 
+    QString dbName = "../../info.db";
+    QString encDbName = "../../info.enc";
+
+
+    bool decryptAndLoadDatabase(const QByteArray &key, const QByteArray &iv);
 
     void checkPin();
 
