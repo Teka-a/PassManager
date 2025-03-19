@@ -9,6 +9,9 @@
 #include <QBuffer>
 #include <QByteArray>
 
+#include <cstdlib>
+#include <ctime>
+
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlRecord>
@@ -27,6 +30,7 @@
 
 
 #include "credentials.h"
+#include "crypto.h"
 //#include "sqlite/sqlite3.h"
 
 QT_BEGIN_NAMESPACE
@@ -60,33 +64,32 @@ private:
     Ui::MainWindow *ui;
     QSqlDatabase db;
 
-    void generateAESKeyAndIV(const QByteArray &inputCode, QByteArray &key, QByteArray &iv);
-
-    bool encryptFile(const QByteArray &key, const QByteArray &iv);
-    QByteArray decryptFile(const QByteArray &key, const QByteArray &iv);
-
-    QString encryptData(const QString &data, const QByteArray &key, const QByteArray &iv);
-    QString decryptData(const QString &data, const QByteArray &key, const QByteArray &iv);
-
     QByteArray keyPass;
     QByteArray ivPass;
 
     QByteArray keyLogin;
     QByteArray ivLogin;
 
-    QString dbName = "../../info.db";
+    //QString dbName = "../../info.db";
     QString encDbName = "../../info.enc";
+    QString tempFile = "../../temp.db";
+
+    QStringList readSQLStatements(const QByteArray &data);
+    bool restoreDatabaseInMemory(const QByteArray &decryptedData);
 
 
     bool decryptAndLoadDatabase(const QByteArray &key, const QByteArray &iv);
 
     void checkPin();
 
-    void setAllCredentials();
-    QVector<Credentials> readCredentials();
+    void setCredentials(QVector<Credentials> &creds);
+    QVector<Credentials> readCredentials(const QString &hostname = NULL);
 
     QString encryptedPin;
 
     void wipe(QByteArray& mem);
+
 };
+
+
 #endif // MAINWINDOW_H
