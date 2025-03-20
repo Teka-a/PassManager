@@ -7,10 +7,21 @@
 #include <QApplication>
 #include <QStyleFactory>
 
+#include <sys/ptrace.h>
+#include <stdio.h>
+#include <errno.h>
+#include <stdlib.h>
 
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+
+    if (ptrace(PTRACE_TRACEME, 0, 1, 0) == -1) {
+        if (errno == EPERM) {
+            qDebug() << "Debugger attached!";
+        }
+        qDebug() << "no debugger attached!";
+    }
 
     qApp->setStyle(QStyleFactory::create("Fusion"));
 

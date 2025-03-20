@@ -12,7 +12,6 @@ protected:
     QByteArray *key;
     QByteArray *iv;
 
-
     void SetUp() override
     {
         std::cout << "Starting up!\n";

@@ -187,18 +187,41 @@ void MainWindow::checkPin()
 void MainWindow::copyClipboard()
 {
     QPushButton *button = qobject_cast<QPushButton*>(sender());
+
     QString textToCopy = "";
+
+    QByteArray plaintext;
+    QByteArray ciphertext;
     if (button->property("type") == "s") {
         textToCopy = button->property("data").toString();
     } else if (button->property("type") == "l") {
         //decrypt with keyLogin and ivLogin
-        textToCopy = button->property("data").toString();
+        QString data = button->property("data").toString();
+        qDebug() << "Login" << data;
+        ciphertext = QByteArray::fromHex(data.toUtf8());
+        qDebug() << ciphertext.toHex();
+        if (!decryptAES256CBC(ciphertext, keyLogin, ivLogin, plaintext)) {
+            //TODO: failed to decrypt, show window
+        }
+        qDebug() << "Decrypted: " << plaintext;
+        textToCopy = QString::fromUtf8(plaintext);
+
     } else if (button->property("type") == "p") {
         //decrypt with keyLogin and ivLogin
-        textToCopy = button->property("data").toString();
+        QString data = button->property("data").toString();
+        qDebug() << "Password" << data;
+        ciphertext = QByteArray::fromHex(data.toUtf8());
+        qDebug() << ciphertext.toHex();
+        if (!decryptAES256CBC(ciphertext, keyPass, ivPass, plaintext)) {
+            //TODO: failed to decrypt, show window
+            qDebug() << "Decryption failed";
+        }
+        qDebug() << "Decrypted: " << plaintext;
+
+        textToCopy = QString::fromUtf8(plaintext);
     }
     QClipboard* clipboard = QApplication::clipboard();
-    clipboard->setText("text");
+    clipboard->setText(textToCopy);
 }
 
 
@@ -392,7 +415,7 @@ QVector<Credentials> MainWindow::readCredentials(const QString &hostname)
     int idIndex = rec.indexOf("id");
     int siteIndex = rec.indexOf("hostname");
     int loginIndex = rec.indexOf("login");
-    int passIndex = rec.indexOf("pass");
+    int passIndex = rec.indexOf("password");
 
     while (query.next()) {
         id = query.value(idIndex).toInt();
