@@ -49,12 +49,21 @@ MainWindow::MainWindow(QWidget *parent)
     //ui->retHome->setStyleSheet("QPushButton:hover { border: none; background: transparent; }");
     connect(ui->retHome, &QPushButton::clicked, this, &MainWindow::openHomePage);
 
+    connect(ui->searchBtn, &QPushButton::clicked, this, &MainWindow::filterByHostname);
+
+
 }
 
 
 MainWindow::~MainWindow()
 {
     delete ui;
+    if (isChanged) {
+        if(!applyChanges()) {
+            qDebug() << "Dump failed!";
+        }
+    }
+
     this->db.close();
     wipe(keyPass);
     wipe(ivPass);
@@ -70,7 +79,9 @@ QStringList MainWindow::readSQLStatements(const QByteArray &data)
     QByteArray currentStatement;
 
     QList<QByteArray> lines = data.split('\n');
+    qDebug() << "Dump: ";
     for (const QByteArray &line : lines) {
+        qDebug() << line;
         QByteArray trimmedLine = line.trimmed();
 
         if (trimmedLine.isEmpty()) {
@@ -99,6 +110,8 @@ bool MainWindow::restoreDatabaseInMemory(const QByteArray &decryptedData)
         return false;
     }
 
+
+
     QStringList sqlCommands = readSQLStatements(decryptedData);
 
     for (const QString &sql : sqlCommands) {
@@ -115,11 +128,12 @@ bool MainWindow::restoreDatabaseInMemory(const QByteArray &decryptedData)
 
 void MainWindow::checkPin()
 {
-    QByteArray keyDatabase;
-    QByteArray ivDatabase;
+    //QByteArray keyDatabase;
+    //QByteArray ivDatabase;
 
     QString dbName = "../../info.db";
     computeAESKeyAndIV(ui->pin->text().toUtf8(), dbName.toUtf8(), keyDatabase, ivDatabase);
+
 
     QByteArray decDBFile;
     QFile file(encDbName);
@@ -129,9 +143,15 @@ void MainWindow::checkPin()
     }
     QByteArray encDBFile = file.readAll();
 
+
+
     if (!decryptAES256CBC(encDBFile, keyDatabase, ivDatabase, decDBFile)) {
         qDebug() << "Ошибка расшифрования!" ;
     }
+
+    qDebug() << "Dump: " << decDBFile;
+
+    qDebug() << "Contains: " << QString::fromUtf8(decDBFile.left(100)).contains("creds", Qt::CaseInsensitive);
 
     if (QString::fromUtf8(decDBFile.left(100)).contains("creds", Qt::CaseInsensitive)) {
         qDebug() << "Here dec: " << QString::fromUtf8(decDBFile.left(100));
@@ -139,8 +159,6 @@ void MainWindow::checkPin()
         this->encryptedPin = ui->pin->text();
 
         ui->pin->setText("");
-        wipe(keyDatabase);
-        wipe(ivDatabase);
 
         ui->stackedWidget->setCurrentWidget(ui->page_2);
         this->setMinimumSize(865, 543);
@@ -195,7 +213,6 @@ void MainWindow::copyClipboard()
     if (button->property("type") == "s") {
         textToCopy = button->property("data").toString();
     } else if (button->property("type") == "l") {
-        //decrypt with keyLogin and ivLogin
         QString data = button->property("data").toString();
         qDebug() << "Login" << data;
         ciphertext = QByteArray::fromHex(data.toUtf8());
@@ -353,6 +370,15 @@ void MainWindow::openHomePage()
 }
 
 
+void MainWindow::filterByHostname()
+{
+    QString hostnamePart = "%" + ui->searchline->text() + "%";
+    qDebug() << "Hostname part: " << hostnamePart;
+    QVector<Credentials> creds = readCredentials(hostnamePart);
+    setCredentials(creds);
+}
+
+
 void MainWindow::changeViewMode()
 {
     QPushButton *clicked = qobject_cast<QPushButton*>(sender());
@@ -441,11 +467,27 @@ void MainWindow::addCreds()
 {
     qDebug() << "add new";
 
+
     QString hostname = ui->siteLine->text();
     //encrypt with keyLogin and ivLogin
     QString login = ui->loginLine->text();
+    QByteArray loginArr = login.toUtf8();
+    QByteArray encLoginArr;
+    if (!encryptAES256CBC(loginArr, this->keyLogin, this->ivLogin, encLoginArr)) {
+        qDebug() << "Encryption failed!";
+    }
+    QString encLogin = encLoginArr.toHex();
+    qDebug() << "Encrypted login: " << encLogin;
+
     //encrypt with keyPass and ivPass
     QString password = ui->passwordLine->text();
+    QByteArray passwordArr = password.toUtf8();
+    QByteArray encPasswordArr;
+    if (!encryptAES256CBC(passwordArr, this->keyPass, this->ivPass, encPasswordArr)) {
+        qDebug() << "Encryption failed!";
+    }
+    QString encPassword = encPasswordArr.toHex();
+    qDebug() << "Encrypted password: " << encPassword;
 
     ui->siteLine->setText("");
     ui->loginLine->setText("");
@@ -456,13 +498,14 @@ void MainWindow::addCreds()
     query.prepare("INSERT INTO creds (hostname, login, password) "
                   "VALUES (:hostname, :login, :password)");
     query.bindValue(":hostname", hostname);
-    query.bindValue(":login",  login);
-    query.bindValue(":password",  password);
+    query.bindValue(":login",  encLogin);
+    query.bindValue(":password",  encPassword);
 
 
     query.exec();
 
     QVector<Credentials> credsUpd = readCredentials();
+    this->isChanged = true;
     setCredentials(credsUpd);
     ui->stackedWidget->setCurrentWidget(ui->page_2);
 }
@@ -487,11 +530,90 @@ void MainWindow::delCreds()
                 qWarning() << "Ошибка удаления:" << query.lastError().text();
             } else {
                 QVector<Credentials> credsUpd = readCredentials();
+                this->isChanged = true;
                 setCredentials(credsUpd);
+
             }
         }
     }
 
+}
+
+
+bool MainWindow::applyChanges()
+{
+    QString dump;
+
+    dump += "PRAGMA foreign_keys=OFF;\n";
+    dump += "BEGIN TRANSACTION;\n";
+
+    QSqlQuery query("SELECT sql FROM sqlite_master WHERE type='table' AND sql NOT NULL", db);
+    while (query.next()) {
+        QString tableDefinition = query.value(0).toString();
+
+        if (!tableDefinition.contains("sqlite_sequence")) {
+            dump += tableDefinition + ";\n";
+        }
+    }
+
+    QStringList tables;
+    query.exec("SELECT name FROM sqlite_master WHERE type='table'");
+    while (query.next()) {
+        QString tableName = query.value(0).toString();
+
+        if (tableName != "sqlite_sequence") {
+            tables.append(tableName);
+        }
+    }
+
+    for (const QString &table : tables) {
+        query.exec(QString("SELECT * FROM %1").arg(table));
+        while (query.next()) {
+            dump += "INSERT INTO " + table + " VALUES(";
+            for (int i = 0; i < query.record().count(); ++i) {
+                dump += "'" + query.value(i).toString().replace("'", "''") + "'";
+                if (i < query.record().count() - 1) dump += ", ";
+            }
+            dump += ");\n";
+        }
+    }
+
+    query.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'");
+    if (query.next()) {
+        dump += "DELETE FROM sqlite_sequence;\n";
+        query.exec("SELECT name, seq FROM sqlite_sequence");
+        while (query.next()) {
+            dump += QString("INSERT INTO sqlite_sequence VALUES('%1', %2);\n")
+            .arg(query.value(0).toString())
+                .arg(query.value(1).toInt());
+        }
+    }
+
+    dump += "COMMIT;\n";
+    QByteArray dumpArr = dump.toUtf8();
+    QByteArray encDumpArr;
+
+
+    if (!encryptAES256CBC(dumpArr, this->keyDatabase, this->ivDatabase, encDumpArr)) {
+        qDebug() << "Encryption failed!";
+        return false;
+    }
+
+    QFile file(encDbName);
+    if (!file.open(QIODevice::WriteOnly)) {
+        qDebug() << "Failed to open file for writing:" << encDbName;
+        return false;
+    }
+
+    qint64 bytesWritten = file.write(encDumpArr);
+    file.close();
+
+    if (bytesWritten != encDumpArr.size()) {
+        qDebug() << "Failed to write all encrypted data to file!";
+        return false;
+    }
+
+    return true;
 }
 
 

@@ -64,10 +64,14 @@ private slots:
 
     void openHomePage();
 
+    void filterByHostname();
+
 
 private:
     Ui::MainWindow *ui;
     QSqlDatabase db;
+
+    bool isChanged = true;
 
     QByteArray keyPass;
     QByteArray ivPass;
@@ -75,9 +79,12 @@ private:
     QByteArray keyLogin;
     QByteArray ivLogin;
 
+    QByteArray keyDatabase;
+    QByteArray ivDatabase;
+
     //QString dbName = "../../info.db";
     QString encDbName = "../../info.enc";
-    QString tempFile = "../../temp.db";
+    //QString tempFile = "../../temp.db";
 
     QStringList readSQLStatements(const QByteArray &data);
     bool restoreDatabaseInMemory(const QByteArray &decryptedData);
@@ -93,6 +100,8 @@ private:
     QString encryptedPin;
 
     void wipe(QByteArray& mem);
+
+    bool applyChanges();
 
 };
 

@@ -45,7 +45,7 @@ int main(int argc, char *argv[])
                         "QLineEdit { border: none; border-bottom: 1px solid #C4C4C4; padding: 5px; background: transparent;  } "
                         "QLabel {font: 12px; } "
                         "QLineEdit:focus { border-bottom: 1px solid #413FA7; }"
-                        "QPushButton:hover { border-bottom: 1px solid #413FA7; padding: 5px; }"
+                        "QPushButton:hover { border-bottom: 3px solid #0B0317; padding: 5px; }"
                         "QLineEdit[text=\"\"] {color: gray;}"
                         );
 
