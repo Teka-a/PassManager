@@ -22,6 +22,11 @@ MainWindow::MainWindow(QWidget *parent)
     ui->insertBtn->setStyleSheet("QPushButton:hover { border-style: outset; border-width: 1px; color: #413FA7; "
                                 "border-radius: 10px; border-color: #413FA7; background-color: #0B0317; }");
 
+    ui->updBtn->setStyleSheet("QPushButton:hover { border-style: outset; border-width: 1px; color: #413FA7; "
+                                 "border-radius: 10px; border-color: #413FA7; background-color: #0B0317; }");
+    ui->info->setStyleSheet("QLabel { color: #413FA7; font: 14px; }");
+    ui->label_2->setStyleSheet("QLabel { font: 15px; }");
+
     setWindowIcon(QIcon(":/rc/icons/icon.ico"));
     setWindowTitle("Password Manager");
 
@@ -33,25 +38,37 @@ MainWindow::MainWindow(QWidget *parent)
     //1 - is shown
     ui->echoLogin->setProperty("mode", 0);
     ui->echoPass->setProperty("mode", 0);
+    ui->echoLogin_2->setProperty("mode", 0);
+    ui->echoPass_2->setProperty("mode", 0);
     //0 - login
     //1 - password
     ui->echoLogin->setProperty("item", 0);
     ui->echoPass->setProperty("item", 1);
+    ui->echoLogin_2->setProperty("item", 0);
+    ui->echoPass_2->setProperty("item", 1);
+    //1 - add
+    //2 - change
+    ui->echoLogin->setProperty("func", 1);
+    ui->echoPass->setProperty("func", 1);
+    ui->echoLogin_2->setProperty("func", 2);
+    ui->echoPass_2->setProperty("func", 2);
+
     ui->echoLogin->setStyleSheet("QPushButton:hover { border: none; background: transparent; }");
     ui->echoPass->setStyleSheet("QPushButton:hover { border: none; background: transparent; }");
 
     connect(ui->echoLogin, &QPushButton::clicked, this, &MainWindow::changeViewMode);
     connect(ui->echoPass, &QPushButton::clicked, this, &MainWindow::changeViewMode);
+    connect(ui->echoLogin_2, &QPushButton::clicked, this, &MainWindow::changeViewMode);
+    connect(ui->echoPass_2, &QPushButton::clicked, this, &MainWindow::changeViewMode);
 
     connect(ui->insertBtn, &QPushButton::clicked, this, &MainWindow::addCreds);
-    //connect(ui->updBtn, &QPushButton::clicked, this, &MainWindow::setCredentials();
+    connect(ui->updBtn, &QPushButton::clicked, this, &MainWindow::updCreds);
 
     //ui->retHome->setStyleSheet("QPushButton:hover { border: none; background: transparent; }");
     connect(ui->retHome, &QPushButton::clicked, this, &MainWindow::openHomePage);
+    connect(ui->retHome_2, &QPushButton::clicked, this, &MainWindow::openHomePage);
 
     connect(ui->searchBtn, &QPushButton::clicked, this, &MainWindow::filterByHostname);
-
-
 }
 
 
@@ -69,7 +86,6 @@ MainWindow::~MainWindow()
     wipe(ivPass);
     wipe(keyLogin);
     wipe(ivLogin);
-    //deleteFileSecurely(this->tempFile);
 }
 
 
@@ -79,9 +95,7 @@ QStringList MainWindow::readSQLStatements(const QByteArray &data)
     QByteArray currentStatement;
 
     QList<QByteArray> lines = data.split('\n');
-    qDebug() << "Dump: ";
     for (const QByteArray &line : lines) {
-        qDebug() << line;
         QByteArray trimmedLine = line.trimmed();
 
         if (trimmedLine.isEmpty()) {
@@ -109,8 +123,6 @@ bool MainWindow::restoreDatabaseInMemory(const QByteArray &decryptedData)
         qDebug() << "Ошибка при открытии базы данных в памяти!";
         return false;
     }
-
-
 
     QStringList sqlCommands = readSQLStatements(decryptedData);
 
@@ -143,15 +155,10 @@ void MainWindow::checkPin()
     }
     QByteArray encDBFile = file.readAll();
 
-
-
     if (!decryptAES256CBC(encDBFile, keyDatabase, ivDatabase, decDBFile)) {
         qDebug() << "Ошибка расшифрования!" ;
     }
 
-    qDebug() << "Dump: " << decDBFile;
-
-    qDebug() << "Contains: " << QString::fromUtf8(decDBFile.left(100)).contains("creds", Qt::CaseInsensitive);
 
     if (QString::fromUtf8(decDBFile.left(100)).contains("creds", Qt::CaseInsensitive)) {
         qDebug() << "Here dec: " << QString::fromUtf8(decDBFile.left(100));
@@ -253,7 +260,7 @@ void MainWindow::setCredentials(QVector<Credentials> &credsInfo)
         ui->noCreds->setVisible(false);
     }
 
-    ui->scrollArea->setStyleSheet(R"(QScrollBar:vertical { border: none; background: #0B0317; width: 10px; margin: 2px 0 2px 0; }
+    ui->scrollArea->setStyleSheet(R"(QScrollBar:vertical { border: none; background: #0B0317; width: 5px; margin: 2px 0 2px 0; }
                                      QScrollBar::handle:vertical { background: #37348F; min-height: 20px; border-radius: 5px; }
                                      QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { background: none; }
                                      QScrollBar::handle:vertical:hover {background: #5A56D0; }
@@ -316,13 +323,14 @@ void MainWindow::setCredentials(QVector<Credentials> &credsInfo)
         QIcon delBtn(pixDelete);
         deleteCredentials->setIcon(delBtn);
         deleteCredentials->setMaximumSize(30, 30);
-
         connect(deleteCredentials, &QPushButton::clicked, this, &MainWindow::delCreds);
+
         QPushButton *changeCredentials = new QPushButton();
         QPixmap pixChange(":/rc/icons/change.png");
         QIcon changeBtn(pixChange);
         changeCredentials->setIcon(changeBtn);
         changeCredentials->setMaximumSize(30, 30);
+        connect(changeCredentials, &QPushButton::clicked, this, &MainWindow::openUpdForm);
 
 
         layout->addItem(new QSpacerItem(10, 30, QSizePolicy::Maximum, QSizePolicy::Maximum));
@@ -364,6 +372,43 @@ void MainWindow::openAddForm()
 }
 
 
+void MainWindow::openUpdForm()
+{
+    ui->stackedWidget->setCurrentWidget(ui->page_4);
+    ui->siteLine->setFocus();
+    QString hostname = "";
+    QString id = "";
+
+    QPushButton *button = qobject_cast<QPushButton*>(sender());
+    if (button) {
+        QWidget *parentWidget = qobject_cast<QWidget*>(button->parent());
+        if (parentWidget) {
+            id = parentWidget->property("id").toString();
+            qDebug() << "Val id: " << id;
+
+            QSqlQuery query(this->db);
+            query.prepare("SELECT * FROM creds WHERE id = :id");
+            query.bindValue(":id", id);
+            query.exec();
+
+            QSqlRecord rec = query.record();
+
+            int siteIndex = rec.indexOf("hostname");
+
+            while (query.next()) {
+                hostname = query.value(siteIndex).toString();
+                qDebug() << "Hostname: " << hostname;
+            }
+
+        }
+    }
+
+    ui->info->setText(hostname);
+
+    ui->updBtn->setProperty("id", id);
+}
+
+
 void MainWindow::openHomePage()
 {
     ui->stackedWidget->setCurrentWidget(ui->page_2);
@@ -387,11 +432,20 @@ void MainWindow::changeViewMode()
 
     if (mode == 0) { //данные скрыты
         qDebug() << "here";
-        if (clicked->property("item").toInt() == 0) {
-            ui->loginLine->setEchoMode(QLineEdit::Normal);
-        } else {
-            ui->passwordLine->setEchoMode(QLineEdit::Normal);
+        if (clicked->property("func").toInt() == 1) {
+            if (clicked->property("item").toInt() == 0) {
+                ui->loginLine->setEchoMode(QLineEdit::Normal);
+            } else {
+                ui->passwordLine->setEchoMode(QLineEdit::Normal);
+            }
+        } else if (clicked->property("func").toInt() == 2) {
+            if (clicked->property("item").toInt() == 0) {
+                ui->loginChange->setEchoMode(QLineEdit::Normal);
+            } else {
+                ui->passwordChange->setEchoMode(QLineEdit::Normal);
+            }
         }
+
 
         QPixmap pixHide(":/rc/icons/hide.png");
         QIcon hideIcon(pixHide);
@@ -399,10 +453,18 @@ void MainWindow::changeViewMode()
 
         clicked->setProperty("mode", 1);
     } else { //данные видны
-        if (clicked->property("item").toInt() == 0) {
-            ui->loginLine->setEchoMode(QLineEdit::Password);
-        } else {
-            ui->passwordLine->setEchoMode(QLineEdit::Password);
+        if (clicked->property("func").toInt() == 1) {
+            if (clicked->property("item").toInt() == 0) {
+                ui->loginLine->setEchoMode(QLineEdit::Password);
+            } else {
+                ui->passwordLine->setEchoMode(QLineEdit::Password);
+            }
+        } else if (clicked->property("func").toInt() == 2) {
+            if (clicked->property("item").toInt() == 0) {
+                ui->loginChange->setEchoMode(QLineEdit::Password);
+            } else {
+                ui->passwordChange->setEchoMode(QLineEdit::Password);
+            }
         }
 
         QPixmap pixShow (":/rc/icons/show.png");
@@ -457,7 +519,6 @@ QVector<Credentials> MainWindow::readCredentials(const QString &hostname)
         credentialsInfo.push_back(creds);
     }
     qDebug() << credentialsInfo.size();
-
 
     return credentialsInfo;
 }
@@ -532,8 +593,121 @@ void MainWindow::delCreds()
                 QVector<Credentials> credsUpd = readCredentials();
                 this->isChanged = true;
                 setCredentials(credsUpd);
-
             }
+        }
+    }
+}
+
+
+QString MainWindow::getEncLogin(QString id)
+{
+    QString encLogin = "";
+
+    QSqlQuery query(this->db);
+    query.prepare("SELECT * FROM creds WHERE id = :id");
+    query.bindValue(":id", id);
+    query.exec();
+
+    QSqlRecord rec = query.record();
+
+    int loginIndex = rec.indexOf("login");
+
+    while (query.next()) {
+        encLogin = query.value(loginIndex).toString();
+    }
+
+    return encLogin;
+}
+
+
+QString MainWindow::getEncPassword(QString id)
+{
+    QString encPassword = "";
+
+    QSqlQuery query(this->db);
+    query.prepare("SELECT * FROM creds WHERE id = :id");
+    query.bindValue(":id", id);
+    query.exec();
+
+    QSqlRecord rec = query.record();
+
+    int passIndex = rec.indexOf("password");
+
+    while (query.next()) {
+        encPassword = query.value(passIndex).toString();
+    }
+
+    return encPassword;
+}
+
+
+void MainWindow::updCreds()
+{
+    qDebug() << "Upd creds";
+    QPushButton *button = qobject_cast<QPushButton*>(sender());
+
+    QString login = ui->loginChange->text();
+    QString password = ui->passwordChange->text();
+
+    if (login == "" && password == "") {
+        return;
+    }
+
+    if (button) {
+        QString id = button->property("id").toString();
+        qDebug() << "Id: " << id;
+
+        QString encLogin = "";
+        QString encPassword = "";
+
+        qDebug() << "Log and pass";
+
+        if (login == "") {
+            encLogin = getEncLogin(id);
+        } else {
+            QByteArray loginArr = login.toUtf8();
+            QByteArray encLoginArr;
+            if (!encryptAES256CBC(loginArr, this->keyLogin, this->ivLogin, encLoginArr)) {
+                qDebug() << "Encryption failed!";
+            }
+            encLogin = encLoginArr.toHex();
+            qDebug() << "Encrypted login: " << encLogin;
+        }
+
+        if (password == "") {
+            encPassword = getEncPassword(id);
+        } else {
+            QByteArray passwordArr = password.toUtf8();
+            QByteArray encPasswordArr;
+            if (!encryptAES256CBC(passwordArr, this->keyPass, this->ivPass, encPasswordArr)) {
+                qDebug() << "Encryption failed!";
+            }
+            encPassword = encPasswordArr.toHex();
+            qDebug() << "Encrypted password: " << encPassword;
+        }
+
+        qDebug() << "before query";
+
+        QSqlQuery query(this->db);
+        query.prepare("UPDATE creds SET login = :login, password = :password "
+                      "WHERE id = :id");
+
+        query.bindValue(":id",  id);
+        query.bindValue(":login",  encLogin);
+        query.bindValue(":password",  encPassword);
+
+        if (!query.exec()) {
+            qWarning() << "Ошибка удаления:" << query.lastError().text();
+        } else {
+            qDebug() << "Updated";
+            QVector<Credentials> credsUpd = readCredentials();
+            this->isChanged = true;
+            setCredentials(credsUpd);
+            ui->stackedWidget->setCurrentWidget(ui->page_2);
+
+            ui->loginChange->setText("");
+            ui->passwordChange->setText("");
+
         }
     }
 

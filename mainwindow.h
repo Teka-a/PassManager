@@ -57,12 +57,13 @@ private slots:
 
     void addCreds();
     void delCreds();
+    void updCreds();
 
     void openAddForm();
+    void openUpdForm();
+    void openHomePage();
 
     void changeViewMode();
-
-    void openHomePage();
 
     void filterByHostname();
 
@@ -71,7 +72,7 @@ private:
     Ui::MainWindow *ui;
     QSqlDatabase db;
 
-    bool isChanged = true;
+    bool isChanged = false;
 
     QByteArray keyPass;
     QByteArray ivPass;
@@ -102,6 +103,10 @@ private:
     void wipe(QByteArray& mem);
 
     bool applyChanges();
+
+    QString getEncLogin(QString id);
+
+    QString getEncPassword(QString id);
 
 };
 
