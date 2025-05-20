@@ -9,11 +9,13 @@
 
 void computeAESKeyAndIV(const QByteArray &inputCode, const QByteArray &salt, QByteArray &key, QByteArray &iv)
 {
-    QByteArray hash = QCryptographicHash::hash(inputCode + salt, QCryptographicHash::Sha256);
+    QByteArray msg = inputCode + salt;
+    QByteArray hash = QCryptographicHash::hash(msg, QCryptographicHash::Sha512);
 
     key = hash.left(32);
     iv = hash.right(16);
 
+    msg.clear();
     //qDebug() << key.toHex();
     //qDebug() << iv.toHex();
 }

@@ -35,20 +35,17 @@ int Credentials::getId()
 
 QString Credentials::getSite()
 {
-    //decrypt
     return this->site;
 }
 
 
 QString Credentials::getLogin()
 {
-    //decrypt
     return this->login;
 }
 
 
 QString Credentials::getPassword()
 {
-    //decrypt
     return this->password;
 }

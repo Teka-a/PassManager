@@ -1,4 +1,6 @@
 #include "mainwindow.h"
+#include "crypto.h"
+#include <QtConcurrent>
 #include "./ui_mainwindow.h"
 
 MainWindow::MainWindow(QWidget *parent)
@@ -7,15 +9,8 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
-    this->setMinimumSize(488, 364);
-    this->setMaximumSize(488, 364);
+    openLoginForm();
 
-    ui->stackedWidget->setCurrentWidget(ui->page);
-
-    ui->pin->setFocus();
-
-    ui->wrongPinInfo->setVisible(false);
-    ui->noCreds->setVisible(false);
     ui->enterBtn->setStyleSheet("QPushButton:hover { border-style: outset; border-width: 1px; color: #413FA7; "
                                 "border-radius: 10px; border-color: #413FA7; background-color: #0B0317; }");
 
@@ -30,8 +25,6 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowIcon(QIcon(":/rc/icons/icon.ico"));
     setWindowTitle("Password Manager");
 
-    connect(ui->enterBtn, &QPushButton::clicked, this, &MainWindow::checkPin);
-    connect(ui->pin, &QLineEdit::returnPressed, this, &MainWindow::checkPin);
 
     connect(ui->addBtn, &QPushButton::clicked, this, &MainWindow::openAddForm);
     //0 - is hidden
@@ -53,6 +46,14 @@ MainWindow::MainWindow(QWidget *parent)
     ui->echoLogin_2->setProperty("func", 2);
     ui->echoPass_2->setProperty("func", 2);
 
+    //0 - first enter to app
+    //1 - add
+    //2 - delete
+    //3 - upd
+    ui->enterBtn->setProperty("stage", 0);
+    connect(ui->pin, &QLineEdit::returnPressed, this, &MainWindow::processPin);
+    connect(ui->enterBtn, &QPushButton::clicked, this, &MainWindow::processPin);
+
     ui->echoLogin->setStyleSheet("QPushButton:hover { border: none; background: transparent; }");
     ui->echoPass->setStyleSheet("QPushButton:hover { border: none; background: transparent; }");
 
@@ -61,14 +62,29 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->echoLogin_2, &QPushButton::clicked, this, &MainWindow::changeViewMode);
     connect(ui->echoPass_2, &QPushButton::clicked, this, &MainWindow::changeViewMode);
 
-    connect(ui->insertBtn, &QPushButton::clicked, this, &MainWindow::addCreds);
-    connect(ui->updBtn, &QPushButton::clicked, this, &MainWindow::updCreds);
+    //connect(ui->insertBtn, &QPushButton::clicked, this, &MainWindow::addCreds);
+    connect(ui->insertBtn, &QPushButton::clicked, this, &MainWindow::loginForAdd);
+    connect(ui->updBtn, &QPushButton::clicked, this, &MainWindow::loginForUpd);
 
     //ui->retHome->setStyleSheet("QPushButton:hover { border: none; background: transparent; }");
     connect(ui->retHome, &QPushButton::clicked, this, &MainWindow::openHomePage);
     connect(ui->retHome_2, &QPushButton::clicked, this, &MainWindow::openHomePage);
 
     connect(ui->searchBtn, &QPushButton::clicked, this, &MainWindow::filterByHostname);
+
+    overlayWidget = new QWidget(this);
+    overlayWidget->setGeometry(0, 0, width(), height());
+    overlayWidget->setStyleSheet("background-color: black;");
+    overlayWidget->hide();
+    overlayWidget->raise();
+
+    overlayHideTimer = new QTimer(this);
+    overlayHideTimer->setSingleShot(true);
+    connect(overlayHideTimer, &QTimer::timeout, this, &MainWindow::hideOverlay);
+
+    checkTimer = new QTimer(this);
+    connect(checkTimer, &QTimer::timeout, this, &MainWindow::checkScreenshooter);
+    checkTimer->start(500);
 }
 
 
@@ -76,16 +92,10 @@ MainWindow::~MainWindow()
 {
     delete ui;
     if (isChanged) {
-        if(!applyChanges()) {
-            qDebug() << "Dump failed!";
-        }
+        qDebug() << "Changes noticed";
     }
 
     this->db.close();
-    wipe(keyPass);
-    wipe(ivPass);
-    wipe(keyLogin);
-    wipe(ivLogin);
 }
 
 
@@ -99,7 +109,7 @@ QStringList MainWindow::readSQLStatements(const QByteArray &data)
         QByteArray trimmedLine = line.trimmed();
 
         if (trimmedLine.isEmpty()) {
-            continue;  // Пропускаем пустые строки
+            continue;
         }
 
         currentStatement += trimmedLine + " ";
@@ -120,7 +130,7 @@ bool MainWindow::restoreDatabaseInMemory(const QByteArray &decryptedData)
     db.setDatabaseName(":memory:");
 
     if (!db.open()) {
-        qDebug() << "Ошибка при открытии базы данных в памяти!";
+        qDebug() << "Failed to open db in memory!";
         return false;
     }
 
@@ -129,7 +139,7 @@ bool MainWindow::restoreDatabaseInMemory(const QByteArray &decryptedData)
     for (const QString &sql : sqlCommands) {
         QSqlQuery query(db);
         if (!query.exec(sql)) {
-            qDebug() << "Ошибка в SQL:" << sql << "→" << query.lastError().text();
+            qDebug() << "Error in SQL:" << sql << "→" << query.lastError().text();
             return false;
         }
     }
@@ -138,74 +148,151 @@ bool MainWindow::restoreDatabaseInMemory(const QByteArray &decryptedData)
 }
 
 
-void MainWindow::checkPin()
+bool MainWindow::isPinCorrect()
 {
-    //QByteArray keyDatabase;
-    //QByteArray ivDatabase;
-
-    QString dbName = "../../info.db";
-    computeAESKeyAndIV(ui->pin->text().toUtf8(), dbName.toUtf8(), keyDatabase, ivDatabase);
-
+    QByteArray keyDb;
+    QByteArray ivDb;
+    computeAESKeyAndIV(ui->pin->text().toUtf8(), databaseSalt.toUtf8(), keyDb, ivDb);
 
     QByteArray decDBFile;
     QFile file(encDbName);
     if (!file.open(QIODevice::ReadOnly)) {
-        qDebug() << "Ошибка открытия файла:" << file.errorString();
-        return;
+        qDebug() << "Error open file:" << file.errorString();
     }
     QByteArray encDBFile = file.readAll();
 
-    if (!decryptAES256CBC(encDBFile, keyDatabase, ivDatabase, decDBFile)) {
-        qDebug() << "Ошибка расшифрования!" ;
+    if (!decryptAES256CBC(encDBFile, keyDb, ivDb, decDBFile)) {
+        qDebug() << "Error decrypting!";
     }
 
+    //qDebug() << "Start: " << QString::fromUtf8(decDBFile.left(100));
 
     if (QString::fromUtf8(decDBFile.left(100)).contains("creds", Qt::CaseInsensitive)) {
-        qDebug() << "Here dec: " << QString::fromUtf8(decDBFile.left(100));
-        //encrypt pin
-        this->encryptedPin = ui->pin->text();
-
-        ui->pin->setText("");
-
-        ui->stackedWidget->setCurrentWidget(ui->page_2);
-        this->setMinimumSize(865, 543);
-        this->setMaximumSize(865, 543);
-
-        QString loginSalt = "093ls902hsdfd";
-        computeAESKeyAndIV(ui->pin->text().toUtf8(), loginSalt.toUtf8(), keyPass, ivPass);
-        qDebug() << "keyPass: " << keyPass.toHex();
-        qDebug() << "ivPass: " << ivPass.toHex();
-
-        QString passwordSalt = "dfdbt89tr.";
-        computeAESKeyAndIV(ui->pin->text().toUtf8(), passwordSalt.toUtf8(), keyLogin, ivLogin);
-        qDebug() << "keyLogin: " << keyLogin.toHex();
-        qDebug() << "ivLogin: " << ivLogin.toHex();
-
-        if (restoreDatabaseInMemory(decDBFile)) {
-            qDebug() << "База данных успешно восстановлена.";
-        } else {
-            qDebug() << "Ошибка восстановления базы данных.";
-        }
-
-        QVector<Credentials> creds = readCredentials();
-        setCredentials(creds);
-
-
-        //qDebug() << decryptAndLoadDatabase(keyDatabase, ivDatabase);
-
-
-
+        return true;
     } else {
-        wipe(keyDatabase);
-        wipe(ivDatabase);
+        return false;
+    }
+}
 
-        ui->pin->setText("");
+
+void MainWindow::processPin()
+{
+    if (isPinCorrect()) {
+        if (ui->enterBtn->property("stage") == 0) {
+            qDebug() << "First login";
+            ui->enterBtn->setProperty("stage", 1);
+
+            QByteArray keyDb;
+            QByteArray ivDb;
+            QByteArray pin = ui->pin->text().toUtf8();
+            computeAESKeyAndIV(pin, databaseSalt.toUtf8(), keyDb, ivDb);
+
+            QByteArray decDBFile;
+            QFile file(encDbName);
+            if (!file.open(QIODevice::ReadOnly)) {
+                qDebug() << "Error open file:" << file.errorString();
+            }
+            QByteArray encDBFile = file.readAll();
+            decryptAES256CBC(encDBFile, keyDb, ivDb, decDBFile);
+
+            if (restoreDatabaseInMemory(decDBFile)) {
+                qDebug() << "DB successfully restored";
+                openHomePage();
+            } else {
+                qDebug() << "DB wasn't restored";
+            }
+        } else if (ui->enterBtn->property("stage") == 1) {
+            qDebug() << "add req";
+
+            emit successPin();
+        }
+    } else {
+        clearDataLoginForm();
+        clearDataHomePage();
+        clearDataAddForm();
+        clearDataUpdForm();
+
         ui->wrongPinInfo->setVisible(true);
         QPixmap lockedPic (":/rc/icons/blocking.png");
 
         ui->locked->setPixmap(lockedPic);
     }
+}
 
+void MainWindow::copySite()
+{
+    QPushButton *button = qobject_cast<QPushButton*>(sender());
+    QString textToCopy = button->property("data").toString();
+
+    QClipboard* clipboard = QApplication::clipboard();
+    clipboard->setText(textToCopy);
+}
+
+void MainWindow::loginForCopy()
+{
+    qDebug() << "Here loginForCopy";
+    QPushButton *button = qobject_cast<QPushButton*>(sender());
+    if (button) {
+        dataToCopy = button->property("data").toString();
+    }
+
+    qDebug() << dataToCopy;
+
+    QWidget *parentWidget = qobject_cast<QWidget*>(button->parent());
+    if (parentWidget) {
+        idToCopy = parentWidget->property("id").toInt();
+    }
+
+    qDebug() << idToCopy;
+
+    openLoginForm();
+    connect(this, &MainWindow::successPin, this, &MainWindow::copyCreds);
+}
+
+
+
+void MainWindow::copyCreds()
+{
+    qDebug() << "Here copyCreds";
+    qDebug() << dataToCopy;
+    qDebug() << idToCopy;
+
+    disconnect(this, &MainWindow::successPin, this, nullptr);
+    QString textToCopy = "";
+
+    if (idToCopy != -1 && dataToCopy != "") {
+        qDebug() << "inside";
+        QString salt = "";
+        getSalt(QString::number(idToCopy), salt);
+
+        QByteArray pinCode = ui->pin->text().toUtf8();
+
+        QByteArray key;
+        QByteArray iv;
+        computeAESKeyAndIV(pinCode, salt.toUtf8(), key, iv);
+
+        QByteArray ciphertext = QByteArray::fromHex(dataToCopy.toUtf8());
+        QByteArray plaintext;
+
+        if (!decryptAES256CBC(ciphertext, key, iv, plaintext)) {
+            qDebug() << "Decryption failed";
+        }
+
+        textToCopy = QString::fromUtf8(plaintext);
+
+        wipe(key);
+        wipe(iv);
+        wipe(ciphertext);
+
+    }
+
+    idToCopy = -1;
+    wipe(dataToCopy);
+
+    QClipboard* clipboard = QApplication::clipboard();
+    clipboard->setText(textToCopy);
+
+    openHomePage();
 }
 
 
@@ -215,39 +302,49 @@ void MainWindow::copyClipboard()
 
     QString textToCopy = "";
 
+    QString pin = "";
+
     QByteArray plaintext;
     QByteArray ciphertext;
     if (button->property("type") == "s") {
         textToCopy = button->property("data").toString();
     } else if (button->property("type") == "l") {
         QString data = button->property("data").toString();
-        qDebug() << "Login" << data;
         ciphertext = QByteArray::fromHex(data.toUtf8());
-        qDebug() << ciphertext.toHex();
-        if (!decryptAES256CBC(ciphertext, keyLogin, ivLogin, plaintext)) {
-            //TODO: failed to decrypt, show window
-        }
-        qDebug() << "Decrypted: " << plaintext;
-        textToCopy = QString::fromUtf8(plaintext);
 
-    } else if (button->property("type") == "p") {
-        //decrypt with keyLogin and ivLogin
-        QString data = button->property("data").toString();
-        qDebug() << "Password" << data;
-        ciphertext = QByteArray::fromHex(data.toUtf8());
-        qDebug() << ciphertext.toHex();
-        if (!decryptAES256CBC(ciphertext, keyPass, ivPass, plaintext)) {
-            //TODO: failed to decrypt, show window
+        QByteArray key;
+        QByteArray iv;
+        computeAESKeyAndIV(pin.toUtf8(), loginSalt.toUtf8(), key, iv);
+
+        qDebug() << "Key login: " << key.toHex();
+        qDebug() << "Iv login: " << iv.toHex();
+
+        if (!decryptAES256CBC(ciphertext, key, iv, plaintext)) {
             qDebug() << "Decryption failed";
         }
-        qDebug() << "Decrypted: " << plaintext;
+
+        textToCopy = QString::fromUtf8(plaintext);
+    } else if (button->property("type") == "p") {
+        QString data = button->property("data").toString();
+        ciphertext = QByteArray::fromHex(data.toUtf8());
+
+        QByteArray key;
+        QByteArray iv;
+        computeAESKeyAndIV(pin.toUtf8(), passwordSalt.toUtf8(), key, iv);
+
+        qDebug() << "Key password: " << key.toHex();
+        qDebug() << "Iv password: " << iv.toHex();
+
+
+        if (!decryptAES256CBC(ciphertext, key, iv, plaintext)) {
+            qDebug() << "Decryption failed";
+        }
 
         textToCopy = QString::fromUtf8(plaintext);
     }
     QClipboard* clipboard = QApplication::clipboard();
     clipboard->setText(textToCopy);
 }
-
 
 
 
@@ -314,16 +411,16 @@ void MainWindow::setCredentials(QVector<Credentials> &credsInfo)
         copyPassword->setProperty("data", credsInfo[i].getPassword());
         copyPassword->setProperty("type", "p");
 
-        connect(copySite, &QPushButton::clicked, this, &MainWindow::copyClipboard);
-        connect(copyLogin, &QPushButton::clicked, this, &MainWindow::copyClipboard);
-        connect(copyPassword, &QPushButton::clicked, this, &MainWindow::copyClipboard);
+        connect(copySite, &QPushButton::clicked, this, &MainWindow::copySite);
+        connect(copyLogin, &QPushButton::clicked, this, &MainWindow::loginForCopy);
+        connect(copyPassword, &QPushButton::clicked, this, &MainWindow::loginForCopy);
 
         QPushButton *deleteCredentials = new QPushButton();
         QPixmap pixDelete(":/rc/icons/delete.png");
         QIcon delBtn(pixDelete);
         deleteCredentials->setIcon(delBtn);
         deleteCredentials->setMaximumSize(30, 30);
-        connect(deleteCredentials, &QPushButton::clicked, this, &MainWindow::delCreds);
+        connect(deleteCredentials, &QPushButton::clicked, this, &MainWindow::loginForDel);
 
         QPushButton *changeCredentials = new QPushButton();
         QPixmap pixChange(":/rc/icons/change.png");
@@ -331,6 +428,7 @@ void MainWindow::setCredentials(QVector<Credentials> &credsInfo)
         changeCredentials->setIcon(changeBtn);
         changeCredentials->setMaximumSize(30, 30);
         connect(changeCredentials, &QPushButton::clicked, this, &MainWindow::openUpdForm);
+
 
 
         layout->addItem(new QSpacerItem(10, 30, QSizePolicy::Maximum, QSizePolicy::Maximum));
@@ -365,8 +463,23 @@ void MainWindow::setCredentials(QVector<Credentials> &credsInfo)
 }
 
 
+void MainWindow::openLoginForm()
+{
+    this->setMinimumSize(488, 364);
+    this->setMaximumSize(488, 364);
+
+    clearDataLoginForm();
+
+    ui->pin->setFocus();
+
+    ui->stackedWidget->setCurrentWidget(ui->page);
+}
+
+
 void MainWindow::openAddForm()
 {
+    this->setMinimumSize(865, 543);
+    this->setMaximumSize(865, 543);
     ui->stackedWidget->setCurrentWidget(ui->page_3);
     ui->siteLine->setFocus();
 }
@@ -374,6 +487,8 @@ void MainWindow::openAddForm()
 
 void MainWindow::openUpdForm()
 {
+    this->setMinimumSize(865, 543);
+    this->setMaximumSize(865, 543);
     ui->stackedWidget->setCurrentWidget(ui->page_4);
     ui->siteLine->setFocus();
     QString hostname = "";
@@ -384,8 +499,7 @@ void MainWindow::openUpdForm()
         QWidget *parentWidget = qobject_cast<QWidget*>(button->parent());
         if (parentWidget) {
             id = parentWidget->property("id").toString();
-            qDebug() << "Val id: " << id;
-
+            idToUpd = parentWidget->property("id").toInt();
             QSqlQuery query(this->db);
             query.prepare("SELECT * FROM creds WHERE id = :id");
             query.bindValue(":id", id);
@@ -397,7 +511,6 @@ void MainWindow::openUpdForm()
 
             while (query.next()) {
                 hostname = query.value(siteIndex).toString();
-                qDebug() << "Hostname: " << hostname;
             }
 
         }
@@ -411,6 +524,13 @@ void MainWindow::openUpdForm()
 
 void MainWindow::openHomePage()
 {
+    clearDataHomePage();
+
+    QVector<Credentials> credsUpd = readCredentials();
+    setCredentials(credsUpd);
+
+    this->setMinimumSize(865, 543);
+    this->setMaximumSize(865, 543);
     ui->stackedWidget->setCurrentWidget(ui->page_2);
 }
 
@@ -418,7 +538,6 @@ void MainWindow::openHomePage()
 void MainWindow::filterByHostname()
 {
     QString hostnamePart = "%" + ui->searchline->text() + "%";
-    qDebug() << "Hostname part: " << hostnamePart;
     QVector<Credentials> creds = readCredentials(hostnamePart);
     setCredentials(creds);
 }
@@ -431,7 +550,6 @@ void MainWindow::changeViewMode()
     int mode = clicked->property("mode").toInt();
 
     if (mode == 0) { //данные скрыты
-        qDebug() << "here";
         if (clicked->property("func").toInt() == 1) {
             if (clicked->property("item").toInt() == 0) {
                 ui->loginLine->setEchoMode(QLineEdit::Normal);
@@ -481,11 +599,7 @@ void MainWindow::changeViewMode()
 QVector<Credentials> MainWindow::readCredentials(const QString &hostname)
 {
     QVector<Credentials> credentialsInfo;
-    //QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE");
-    //db.setDatabaseName(this->dbName);
-    //if (!db.open()) {
-    //    qDebug() << "not opened";
-    //}
+
     QSqlQuery query(this->db);
     query.prepare("SELECT * FROM creds WHERE hostname LIKE :hostname OR :hostname IS NULL");
     query.bindValue(":hostname", hostname);
@@ -518,84 +632,141 @@ QVector<Credentials> MainWindow::readCredentials(const QString &hostname)
 
         credentialsInfo.push_back(creds);
     }
-    qDebug() << credentialsInfo.size();
 
     return credentialsInfo;
 }
 
 
+void MainWindow::generateSalt(QString &salt)
+{
+    int saltLen = QRandomGenerator::global()->bounded(5, 25);
+    salt = "";
+
+    salt.reserve(saltLen);
+    for (int i = 0; i < saltLen; ++i) {
+        int index = QRandomGenerator::global()->bounded(chars.length());
+        salt.append(chars.at(index));
+    }
+}
+
+
+void MainWindow::loginForAdd()
+{
+    openLoginForm();
+    connect(this, &MainWindow::successPin, this, &MainWindow::addCreds);
+}
+
+
 void MainWindow::addCreds()
 {
-    qDebug() << "add new";
+    disconnect(this, &MainWindow::successPin, this, nullptr);
 
+    QByteArray pinCode = ui->pin->text().toUtf8();
+
+    QByteArray key;
+    QByteArray iv;
+    QString saltStr;
+    generateSalt(saltStr);
+    QByteArray salt = saltStr.toUtf8();
+    computeAESKeyAndIV(pinCode, salt, key, iv);
+
+    QByteArray keyDb;
+    QByteArray ivDb;
+    computeAESKeyAndIV(pinCode, databaseSalt.toUtf8(), keyDb, ivDb);
 
     QString hostname = ui->siteLine->text();
-    //encrypt with keyLogin and ivLogin
+
     QString login = ui->loginLine->text();
     QByteArray loginArr = login.toUtf8();
     QByteArray encLoginArr;
-    if (!encryptAES256CBC(loginArr, this->keyLogin, this->ivLogin, encLoginArr)) {
+    if (!encryptAES256CBC(loginArr, key, iv, encLoginArr)) {
         qDebug() << "Encryption failed!";
     }
     QString encLogin = encLoginArr.toHex();
-    qDebug() << "Encrypted login: " << encLogin;
 
-    //encrypt with keyPass and ivPass
     QString password = ui->passwordLine->text();
     QByteArray passwordArr = password.toUtf8();
     QByteArray encPasswordArr;
-    if (!encryptAES256CBC(passwordArr, this->keyPass, this->ivPass, encPasswordArr)) {
+    if (!encryptAES256CBC(passwordArr, key, iv, encPasswordArr)) {
         qDebug() << "Encryption failed!";
     }
     QString encPassword = encPasswordArr.toHex();
-    qDebug() << "Encrypted password: " << encPassword;
-
-    ui->siteLine->setText("");
-    ui->loginLine->setText("");
-    ui->passwordLine->setText("");
-
 
     QSqlQuery query(this->db);
-    query.prepare("INSERT INTO creds (hostname, login, password) "
-                  "VALUES (:hostname, :login, :password)");
+    query.prepare("INSERT INTO creds (hostname, login, password, salt) "
+                  "VALUES (:hostname, :login, :password, :salt)");
     query.bindValue(":hostname", hostname);
     query.bindValue(":login",  encLogin);
     query.bindValue(":password",  encPassword);
-
+    query.bindValue(":salt",  saltStr);
 
     query.exec();
 
-    QVector<Credentials> credsUpd = readCredentials();
     this->isChanged = true;
-    setCredentials(credsUpd);
-    ui->stackedWidget->setCurrentWidget(ui->page_2);
+    applyChanges(keyDb, ivDb);
+    this->isChanged = false;
+
+    wipe(key);
+    wipe(iv);
+    wipe(keyDb);
+    wipe(ivDb);
+    wipe(salt);
+    wipe(saltStr);
+    wipe(pinCode);
+
+    clearDataAddForm();
+    clearDataLoginForm();
+
+    openHomePage();
+}
+
+
+void MainWindow::loginForDel()
+{
+    QPushButton *button = qobject_cast<QPushButton*>(sender());
+    if (button) {
+        QWidget *parentWidget = qobject_cast<QWidget*>(button->parent());
+        if (parentWidget) {
+            idToDel = parentWidget->property("id").toInt();
+        }
+    }
+
+    openLoginForm();
+    connect(this, &MainWindow::successPin, this, &MainWindow::delCreds);
 }
 
 
 void MainWindow::delCreds()
 {
-    qDebug() << "Del creds";
-    QPushButton *button = qobject_cast<QPushButton*>(sender());
-    if (button) {
-        QWidget *parentWidget = qobject_cast<QWidget*>(button->parent());
-        if (parentWidget) {
-            QString id = parentWidget->property("id").toString();
-            qDebug() << "Val id: " << id;
+    disconnect(this, &MainWindow::successPin, this, nullptr);
+    if (idToUpd != -1) {
+        QString id = QString::number(idToUpd);
+        QByteArray pinCode = ui->pin->text().toUtf8();
 
-            QSqlQuery query(this->db);
-            query.prepare("DELETE FROM creds WHERE id = :id");
-            query.bindValue(":id", id);
+        QByteArray keyDb;
+        QByteArray ivDb;
+        computeAESKeyAndIV(pinCode, databaseSalt.toUtf8(), keyDb, ivDb);
 
-            // Выполняем запрос
-            if (!query.exec()) {
-                qWarning() << "Ошибка удаления:" << query.lastError().text();
-            } else {
-                QVector<Credentials> credsUpd = readCredentials();
-                this->isChanged = true;
-                setCredentials(credsUpd);
-            }
+        QSqlQuery query(this->db);
+        query.prepare("DELETE FROM creds WHERE id = :id");
+        query.bindValue(":id", id);
+
+        if (!query.exec()) {
+            qWarning() << "Deletion error:" << query.lastError().text();
+            idToDel = -1;
         }
+
+        this->isChanged = true;
+        applyChanges(keyDb, ivDb);
+        this->isChanged = false;
+
+        wipe(keyDb);
+        wipe(ivDb);
+        wipe(pinCode);
     }
+    clearDataLoginForm();
+
+    openHomePage();
 }
 
 
@@ -641,37 +812,71 @@ QString MainWindow::getEncPassword(QString id)
 }
 
 
+void MainWindow::getSalt(QString id, QString &salt)
+{
+    QSqlQuery query(this->db);
+    query.prepare("SELECT * FROM creds WHERE id = :id");
+    query.bindValue(":id", id);
+    query.exec();
+
+    QSqlRecord rec = query.record();
+
+    int saltIndex = rec.indexOf("salt");
+
+    while (query.next()) {
+        salt = query.value(saltIndex).toString();
+    }
+}
+
+
+void MainWindow::loginForUpd()
+{
+    connect(this, &MainWindow::successPin, this, &MainWindow::updCreds);
+    openLoginForm();
+}
+
+
 void MainWindow::updCreds()
 {
-    qDebug() << "Upd creds";
-    QPushButton *button = qobject_cast<QPushButton*>(sender());
+    disconnect(this, &MainWindow::successPin, this, nullptr);
+    qDebug() << "Upd Creds";
 
     QString login = ui->loginChange->text();
     QString password = ui->passwordChange->text();
 
     if (login == "" && password == "") {
+        qDebug() << "Nothing to change";
+        openHomePage();
         return;
     }
 
-    if (button) {
-        QString id = button->property("id").toString();
-        qDebug() << "Id: " << id;
-
+    if (idToUpd != -1) {
+        QString id = QString::number(idToUpd);
         QString encLogin = "";
         QString encPassword = "";
+        QString salt = "";
+        getSalt(id, salt);
 
-        qDebug() << "Log and pass";
+        QByteArray pinCode = ui->pin->text().toUtf8();
+
+        QByteArray key;
+        QByteArray iv;
+        computeAESKeyAndIV(pinCode, salt.toUtf8(), key, iv);
+
+        QByteArray keyDb;
+        QByteArray ivDb;
+        computeAESKeyAndIV(pinCode, databaseSalt.toUtf8(), keyDb, ivDb);
+
 
         if (login == "") {
             encLogin = getEncLogin(id);
         } else {
             QByteArray loginArr = login.toUtf8();
             QByteArray encLoginArr;
-            if (!encryptAES256CBC(loginArr, this->keyLogin, this->ivLogin, encLoginArr)) {
+            if (!encryptAES256CBC(loginArr, key, iv, encLoginArr)) {
                 qDebug() << "Encryption failed!";
             }
             encLogin = encLoginArr.toHex();
-            qDebug() << "Encrypted login: " << encLogin;
         }
 
         if (password == "") {
@@ -679,14 +884,12 @@ void MainWindow::updCreds()
         } else {
             QByteArray passwordArr = password.toUtf8();
             QByteArray encPasswordArr;
-            if (!encryptAES256CBC(passwordArr, this->keyPass, this->ivPass, encPasswordArr)) {
+            if (!encryptAES256CBC(passwordArr, key, iv, encPasswordArr)) {
                 qDebug() << "Encryption failed!";
             }
             encPassword = encPasswordArr.toHex();
-            qDebug() << "Encrypted password: " << encPassword;
         }
 
-        qDebug() << "before query";
 
         QSqlQuery query(this->db);
         query.prepare("UPDATE creds SET login = :login, password = :password "
@@ -696,25 +899,33 @@ void MainWindow::updCreds()
         query.bindValue(":login",  encLogin);
         query.bindValue(":password",  encPassword);
 
+        clearDataLoginForm();
+        clearDataUpdForm();
+
         if (!query.exec()) {
-            qWarning() << "Ошибка удаления:" << query.lastError().text();
+            qWarning() << "Updating error:" << query.lastError().text();
         } else {
-            qDebug() << "Updated";
-            QVector<Credentials> credsUpd = readCredentials();
+
             this->isChanged = true;
-            setCredentials(credsUpd);
-            ui->stackedWidget->setCurrentWidget(ui->page_2);
-
-            ui->loginChange->setText("");
-            ui->passwordChange->setText("");
-
+            applyChanges(keyDb, ivDb);
+            this->isChanged = false;
         }
+
+        wipe(key);
+        wipe(iv);
+        wipe(keyDb);
+        wipe(ivDb);
+        wipe(salt);
+        wipe(pinCode);
+
+
     }
 
+    openHomePage();
 }
 
 
-bool MainWindow::applyChanges()
+bool MainWindow::applyChanges(QByteArray &key, QByteArray &iv)
 {
     QString dump;
 
@@ -764,11 +975,14 @@ bool MainWindow::applyChanges()
     }
 
     dump += "COMMIT;\n";
+
     QByteArray dumpArr = dump.toUtf8();
     QByteArray encDumpArr;
 
+    //qDebug() << "Key: " << key.toHex();
+    //qDebug() << "Iv: " << iv.toHex();
 
-    if (!encryptAES256CBC(dumpArr, this->keyDatabase, this->ivDatabase, encDumpArr)) {
+    if (!encryptAES256CBC(dumpArr, key, iv, encDumpArr)) {
         qDebug() << "Encryption failed!";
         return false;
     }
@@ -793,5 +1007,121 @@ bool MainWindow::applyChanges()
 
 void MainWindow::wipe(QByteArray& mem)
 {
-    mem.fill(0);
+    for (int i = 0; i < mem.size(); ++i) {
+        mem[i] = static_cast<char>(QRandomGenerator::global()->generate() & 0xFF);
+    }
 }
+
+
+void MainWindow::wipe(QString& str) {
+    int len = str.length();
+    for (int i = 0; i < len; ++i) {
+        ushort randomChar = QRandomGenerator::global()->bounded(0x21, 0x7E); // Printable ASCII range
+        str[i] = QChar(randomChar);
+    }
+    str.clear();
+}
+
+
+void MainWindow::clearDataLoginForm()
+{
+    ui->pin->setText("");
+    ui->wrongPinInfo->setVisible(false);
+    ui->locked->setPixmap(QPixmap());
+}
+
+
+void MainWindow::clearDataAddForm()
+{
+    ui->loginLine->setText("");
+    ui->passwordLine->setText("");
+    ui->siteLine->setText("");
+}
+
+
+void MainWindow::clearDataUpdForm()
+{
+    ui->info->setText("");
+    ui->loginChange->setText("");
+    ui->passwordChange->setText("");
+}
+
+
+void MainWindow::clearDataHomePage()
+{
+    QWidget *oldWidget = ui->scrollArea->widget();
+    if (oldWidget) {
+        oldWidget->deleteLater(); // безопасное удаление после событий
+    }
+    QWidget *window = new QWidget;
+    ui->scrollArea->setWidget(window);
+    ui->searchline->setText("");
+    ui->noCreds->setVisible(false);
+}
+
+
+void MainWindow::checkScreenshooter()
+{
+    QtConcurrent::run([this]() {
+        // Проверка процессов
+        QProcess process;
+        process.start("pgrep", QStringList() << "-f" << "xfce4-screenshooter");
+        process.waitForFinished();
+        QString output1 = process.readAllStandardOutput();
+        bool xfceShot = !output1.trimmed().isEmpty();
+
+        QProcess flameshot;
+        flameshot.start("pgrep", QStringList() << "-f" << "flameshot");
+        flameshot.waitForFinished();
+        QString output2 = flameshot.readAllStandardOutput();
+        bool flameshotRunning = !output2.trimmed().isEmpty();
+
+        if (xfceShot || flameshotRunning) {
+            QMetaObject::invokeMethod(this, [this]() {
+                overlayWidget->show();
+                overlayWidget->raise();
+                overlayHideTimer->start(5000);
+
+                QClipboard *clipboard = QGuiApplication::clipboard();
+                clipboard->clear();
+            }, Qt::QueuedConnection);
+
+            // Удаление последнего скриншота
+            QString screenshotsDir = QDir::homePath() + "/Pictures";
+            QDir dir(screenshotsDir);
+            if (dir.exists()) {
+                QFileInfoList files = dir.entryInfoList(
+                    QStringList() << "*.png" << "*.jpg" << "*.jpeg",
+                    QDir::Files, QDir::Time
+                    );
+                if (!files.isEmpty()) {
+                    QFileInfo latest = files.first();
+                    QDateTime now = QDateTime::currentDateTime();
+                    if (latest.lastModified().secsTo(now) < 5) {
+                        QFile::remove(latest.absoluteFilePath());
+                        qDebug() << "🗑️ Удалён файл:" << latest.fileName();
+                    }
+                }
+            }
+        }
+    });
+}
+
+
+void MainWindow::hideOverlay()
+{
+    overlayWidget->hide();
+
+    QClipboard *clipboard = QGuiApplication::clipboard();
+    clipboard->clear();
+}
+
+
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
+    overlayWidget->setGeometry(0, 0, width(), height());
+}
+
+
+

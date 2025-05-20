@@ -1,0 +1,19 @@
+gtest_autogen/timestamp: \
+	/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp/.qtc/package-manager/auto-setup.cmake \
+	/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp/_deps/googletest-src/googletest/CMakeLists.txt \
+	/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp/_deps/googletest-src/googletest/cmake/Config.cmake.in \
+	/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp/_deps/googletest-src/googletest/cmake/gtest.pc.in \
+	/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp/_deps/googletest-src/googletest/cmake/gtest_main.pc.in \
+	/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp/_deps/googletest-src/googletest/cmake/internal_utils.cmake \
+	/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp/_deps/googletest-src/googletest/src/gtest-all.cc \
+	/usr/share/cmake-3.30/Modules/BasicConfigVersion-AnyNewerVersion.cmake.in \
+	/usr/share/cmake-3.30/Modules/CMakePackageConfigHelpers.cmake \
+	/usr/share/cmake-3.30/Modules/CheckCSourceCompiles.cmake \
+	/usr/share/cmake-3.30/Modules/CheckIncludeFile.cmake \
+	/usr/share/cmake-3.30/Modules/CheckLibraryExists.cmake \
+	/usr/share/cmake-3.30/Modules/FindPackageHandleStandardArgs.cmake \
+	/usr/share/cmake-3.30/Modules/FindPackageMessage.cmake \
+	/usr/share/cmake-3.30/Modules/FindThreads.cmake \
+	/usr/share/cmake-3.30/Modules/Internal/CheckSourceCompiles.cmake \
+	/usr/share/cmake-3.30/Modules/WriteBasicConfigVersionFile.cmake \
+	/usr/bin/cmake

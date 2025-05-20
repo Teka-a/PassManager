@@ -1,0 +1,17 @@
+file_autogen/timestamp: \
+	/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp/.qtc/package-manager/auto-setup.cmake \
+	/home/smth/projects/GitHub_Teka-a_/PassManager/test/CMakeLists.txt \
+	/home/smth/projects/GitHub_Teka-a_/PassManager/test/main.cpp \
+	/home/smth/projects/GitHub_Teka-a_/PassManager/test/tst_file.cpp \
+	/usr/share/cmake-3.30/Modules/CheckCXXSourceCompiles.cmake \
+	/usr/share/cmake-3.30/Modules/CheckIncludeFileCXX.cmake \
+	/usr/share/cmake-3.30/Modules/CheckLibraryExists.cmake \
+	/usr/share/cmake-3.30/Modules/ExternalProject/shared_internal_commands.cmake \
+	/usr/share/cmake-3.30/Modules/FetchContent.cmake \
+	/usr/share/cmake-3.30/Modules/FetchContent/CMakeLists.cmake.in \
+	/usr/share/cmake-3.30/Modules/FindOpenSSL.cmake \
+	/usr/share/cmake-3.30/Modules/FindPackageHandleStandardArgs.cmake \
+	/usr/share/cmake-3.30/Modules/FindPackageMessage.cmake \
+	/usr/share/cmake-3.30/Modules/FindPkgConfig.cmake \
+	/usr/share/cmake-3.30/Modules/FindThreads.cmake \
+	/usr/bin/cmake

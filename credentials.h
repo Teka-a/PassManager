@@ -23,8 +23,6 @@ private:
     QString site;
     QString login;
     QString password;
-
-
 };
 
 #endif // CREDENTIALS_H

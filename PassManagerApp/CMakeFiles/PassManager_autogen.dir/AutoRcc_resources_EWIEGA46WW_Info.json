@@ -1,0 +1,38 @@
+{
+	"BUILD_DIR" : "/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp/PassManager_autogen",
+	"CMAKE_BINARY_DIR" : "/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp",
+	"CMAKE_CURRENT_BINARY_DIR" : "/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp",
+	"CMAKE_CURRENT_SOURCE_DIR" : "/home/smth/projects/GitHub_Teka-a_/PassManager",
+	"CMAKE_SOURCE_DIR" : "/home/smth/projects/GitHub_Teka-a_/PassManager",
+	"CROSS_CONFIG" : false,
+	"GENERATOR" : "Ninja",
+	"INCLUDE_DIR" : "/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp/PassManager_autogen/include",
+	"INPUTS" : 
+	[
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/icon.ico",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/delete.png",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/update.png",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/search.png",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/settings.png",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/add.png",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/blocking.png",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/profile.png",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/change.png",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/hide.png",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/copy.png",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/website.png",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/show.png",
+		"/home/smth/projects/GitHub_Teka-a_/PassManager/icons/home.png"
+	],
+	"LOCK_FILE" : "/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp/CMakeFiles/PassManager_autogen.dir/AutoRcc_resources_EWIEGA46WW_Lock.lock",
+	"MULTI_CONFIG" : false,
+	"OPTIONS" : [ "-name", "resources" ],
+	"OUTPUT_CHECKSUM" : "EWIEGA46WW",
+	"OUTPUT_NAME" : "qrc_resources.cpp",
+	"RCC_EXECUTABLE" : "/home/smth/Qt/6.8.2/gcc_64/libexec/rcc",
+	"RCC_LIST_OPTIONS" : [ "--list" ],
+	"SETTINGS_FILE" : "/home/smth/projects/GitHub_Teka-a_/PassManager/PassManagerApp/CMakeFiles/PassManager_autogen.dir/AutoRcc_resources_EWIEGA46WW_Used.txt",
+	"SOURCE" : "/home/smth/projects/GitHub_Teka-a_/PassManager/resources.qrc",
+	"USE_BETTER_GRAPH" : true,
+	"VERBOSITY" : 0
+}
